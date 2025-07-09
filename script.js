@@ -133,57 +133,96 @@ class TrendReversalAnalyzer {
         this.updateStats(results);
         this.elements.status.textContent = `تم تحليل ${results.length} عملة - آخر تحديث: ${new Date().toLocaleTimeString('ar-SA')}`;
     }
-
-    async analyzeCoin(symbol) {
-        try {
-            const klines = await this.getKlineData(symbol, this.config.interval, 100);
-            if (!klines || klines.length < 50) return null;
-            
-            const analysis = this.performTechnicalAnalysis(klines);
-            const trendAnalysis = this.analyzeTrend(analysis);
-            const reversalScore = this.calculateReversalScore(analysis, trendAnalysis);
-            
-            if (trendAnalysis.isDowntrend && trendAnalysis.strength >= this.config.trendStrength) {
-                const result = {
-                    symbol,
-                    price: parseFloat(klines[klines.length - 1][4]),
-                    change24h: this.calculate24hChange(klines),
-                    analysis,
-                    trendAnalysis,
-                    reversalScore,
-                    timestamp: Date.now()
-                };
-                
-                this.checkForAlerts(result);
-                return result;
-            }
-            
-            return null;
-        } catch (error) {
-            console.error(`خطأ في تحليل ${symbol}:`, error);
+validateData(data) {
+    return {
+        price: isNaN(data.price) || data.price === null ? 0 : data.price,
+        volume: isNaN(data.volume) || data.volume === null || data.volume === 0 ? 1 : data.volume,
+        change24h: isNaN(data.change24h) || data.change24h === null ? 0 : data.change24h
+    };
+}
+   async analyzeCoin(symbol) {
+    try {
+        const klines = await this.getKlineData(symbol, this.config.interval, 100);
+        if (!klines || klines.length < 50) return null;
+        
+        // التحقق من صحة البيانات
+        const lastKline = klines[klines.length - 1];
+        if (!lastKline || isNaN(lastKline.close) || lastKline.close <= 0) {
+            console.warn(`بيانات غير صحيحة لـ ${symbol}`);
             return null;
         }
+        
+        const analysis = this.performTechnicalAnalysis(klines);
+        const trendAnalysis = this.analyzeTrend(analysis);
+        const reversalScore = this.calculateReversalScore(analysis, trendAnalysis);
+        
+        if (trendAnalysis.isDowntrend && trendAnalysis.strength >= this.config.trendStrength) {
+            const result = {
+                symbol,
+                price: lastKline.close,
+                change24h: this.calculate24hChange(klines),
+                analysis,
+                trendAnalysis,
+                reversalScore,
+                timestamp: Date.now()
+            };
+            
+            // التحقق من صحة النتيجة النهائية
+            const validatedResult = {
+                ...result,
+                ...this.validateData(result)
+            };
+            
+            this.checkForAlerts(validatedResult);
+            return validatedResult;
+        }
+        
+        return null;
+    } catch (error) {
+        console.error(`خطأ في تحليل ${symbol}:`, error);
+        return null;
     }
+}
 
-    async getKlineData(symbol, interval, limit) {
-        try {
-            const response = await fetch(
-                `https://api1.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
-            );
-            const data = await response.json();
-            return data.map(kline => ({
-                openTime: kline[0],
+   async getKlineData(symbol, interval, limit) {
+    try {
+        const response = await fetch(
+            `https://api1.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
+        );
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (!Array.isArray(data) || data.length === 0) {
+            throw new Error('بيانات فارغة أو غير صحيحة');
+        }
+        
+        return data.map(kline => {
+            const mappedKline = {
+                openTime: parseInt(kline[0]),
                 open: parseFloat(kline[1]),
                 high: parseFloat(kline[2]),
                 low: parseFloat(kline[3]),
                 close: parseFloat(kline[4]),
                 volume: parseFloat(kline[5])
-            }));
-        } catch (error) {
-            console.error(`خطأ في جلب بيانات ${symbol}:`, error);
-            return null;
-        }
+            };
+            
+            // التحقق من صحة البيانات
+            if (isNaN(mappedKline.close) || isNaN(mappedKline.volume) || 
+                mappedKline.close <= 0 || mappedKline.volume < 0) {
+                throw new Error('بيانات أسعار غير صحيحة');
+            }
+            
+            return mappedKline;
+        });
+    } catch (error) {
+        console.error(`خطأ في جلب بيانات ${symbol}:`, error);
+        return null;
     }
+}
 
     performTechnicalAnalysis(klines) {
         const closes = klines.map(k => k.close);
@@ -259,11 +298,20 @@ class TrendReversalAnalyzer {
     }
 
     calculateVolumeRatio(volumes) {
-        const avgVolume = this.calculateSMA(volumes, 20);
-        const currentVolume = volumes[volumes.length - 1];
-        const currentAvg = avgVolume[avgVolume.length - 1];
-        return currentAvg ? currentVolume / currentAvg : 1;
-    }
+    if (!volumes || volumes.length === 0) return 1;
+    
+    const validVolumes = volumes.filter(v => !isNaN(v) && v > 0);
+    if (validVolumes.length === 0) return 1;
+    
+    const avgVolume = this.calculateSMA(validVolumes, Math.min(20, validVolumes.length));
+    const currentVolume = validVolumes[validVolumes.length - 1];
+    const currentAvg = avgVolume[avgVolume.length - 1];
+    
+    if (!currentAvg || currentAvg === 0 || isNaN(currentAvg)) return 1;
+    
+    const ratio = currentVolume / currentAvg;
+    return isNaN(ratio) ? 1 : ratio;
+}
 
     calculateStochastic(highs, lows, closes, period) {
         const k = [];
@@ -523,62 +571,99 @@ class TrendReversalAnalyzer {
         this.elements.resultsGrid.innerHTML = results.map(result => this.createCoinCard(result)).join('');
     }
 
-    createCoinCard(result) {
-        const { symbol, price, change24h, analysis, trendAnalysis, reversalScore } = result;
-        const currentRSI = analysis.rsi[analysis.rsi.length - 1];
-        const currentStoch = analysis.stochastic.k[analysis.stochastic.k.length - 1];
-        const macdTrend = analysis.macd.macdLine[analysis.macd.macdLine.length - 1] > analysis.macd.signalLine[analysis.macd.signalLine.length - 1] ? 'صاعد' : 'هابط';
+  createCoinCard(result) {
+    const { symbol, price, change24h, analysis, trendAnalysis, reversalScore } = result;
+    
+    // التأكد من صحة البيانات قبل العرض
+    const safePrice = isNaN(price) || price <= 0 ? 0 : price;
+    const safeChange = isNaN(change24h) ? 0 : change24h;
+    const safeVolumeRatio = isNaN(analysis.volume_ratio) || analysis.volume_ratio <= 0 ? 1 : analysis.volume_ratio;
+    
+    const currentRSI = analysis.rsi[analysis.rsi.length - 1];
+    const currentStoch = analysis.stochastic.k[analysis.stochastic.k.length - 1];
+    const macdTrend = analysis.macd.macdLine[analysis.macd.macdLine.length - 1] > 
+                     analysis.macd.signalLine[analysis.macd.signalLine.length - 1] ? 'صاعد' : 'هابط';
 
-        return `
-            <div class="coin-card ${reversalScore.level}-reversal">
-                <div class="coin-header">
-                    <div class="coin-symbol">${symbol}</div>
-                    <div class="coin-price">$${price.toFixed(6)}</div>
-                </div>
-                
-                <div class="coin-metrics">
-                    <div class="metric">
-                        <span class="metric-label">التغير 24س:</span>
-                        <span class="metric-value" style="color: ${change24h >= 0 ? '#00ff88' : '#ff4444'}">${change24h.toFixed(2)}%</span>
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">قوة الترند:</span>
-                        <span class="metric-value">${trendAnalysis.strength}/5</span>
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">RSI:</span>
-                        <span class="metric-value" style="color: ${currentRSI < 30 ? '#00ff88' : currentRSI > 70 ? '#ff4444' : '#e0e0e0'}">${currentRSI.toFixed(1)}</span>
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">MACD:</span>
-                        <span class="metric-value" style="color: ${macdTrend === 'صاعد' ? '#00ff88' : '#ff4444'}">${macdTrend}</span>
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">Stochastic:</span>
-                        <span class="metric-value" style="color: ${currentStoch < 20 ? '#00ff88' : currentStoch > 80 ? '#ff4444' : '#e0e0e0'}">${currentStoch.toFixed(1)}</span>
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">الحجم:</span>
-                        <span class="metric-value" style="color: ${analysis.volume_ratio > 1.5 ? '#00ff88' : '#e0e0e0'}">${analysis.volume_ratio.toFixed(1)}x</span>
-                    </div>
-                </div>
+    // تحديد عدد الخانات العشرية حسب السعر
+    const priceDecimals = safePrice > 1 ? 4 : 8;
+    const displayPrice = safePrice > 0 ? safePrice.toFixed(priceDecimals) : 'غير متاح';
 
-                <div class="reversal-score">
-                    <div class="score-label">نقاط الانعكاس</div>
-                    <div class="score-value score-${reversalScore.level}">
-                        ${(reversalScore.score * 100).toFixed(1)}%
-                    </div>
-                </div>
-
-                ${reversalScore.signals.length > 0 ? `
-                    <div style="margin-top: 10px; font-size: 12px; color: #b0b0b0;">
-                        <strong>الإشارات:</strong><br>
-                        ${reversalScore.signals.slice(0, 3).join(' • ')}
-                    </div>
-                ` : ''}
+    return `
+        <div class="coin-card ${reversalScore.level}-reversal">
+            <div class="coin-header">
+                <div class="coin-symbol">${symbol.replace('USDT', '/USDT')}</div>
+                <div class="coin-price">$${displayPrice}</div>
             </div>
-        `;
+            
+            <div class="coin-metrics">
+                <div class="metric">
+                    <span class="metric-label">التغير 24س:</span>
+                    <span class="metric-value" style="color: ${safeChange >= 0 ? '#00ff88' : '#ff4444'}">${safeChange.toFixed(2)}%</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">قوة الترند:</span>
+                    <span class="metric-value">${trendAnalysis.strength}/5</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">RSI:</span>
+                    <span class="metric-value" style="color: ${currentRSI < 30 ? '#00ff88' : currentRSI > 70 ? '#ff4444' : '#e0e0e0'}">${currentRSI.toFixed(1)}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">MACD:</span>
+                    <span class="metric-value" style="color: ${macdTrend === 'صاعد' ? '#00ff88' : '#ff4444'}">${macdTrend}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Stochastic:</span>
+                    <span class="metric-value" style="color: ${currentStoch < 20 ? '#00ff88' : currentStoch > 80 ? '#ff4444' : '#e0e0e0'}">${currentStoch.toFixed(1)}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">الحجم:</span>
+                    <span class="metric-value" style="color: ${safeVolumeRatio > 1.5 ? '#00ff88' : '#e0e0e0'}">${safeVolumeRatio.toFixed(1)}x</span>
+                </div>
+            </div>
+
+            <div class="reversal-score">
+                <div class="score-label">نقاط الانعكاس</div>
+                <div class="score-value score-${reversalScore.level}">
+                    ${(reversalScore.score * 100).toFixed(1)}%
+                </div>
+            </div>
+
+            ${reversalScore.signals.length > 0 ? `
+                <div class="reversal-signals">
+                    <div class="signals-title">الإشارات:</div>
+                    <div class="signals-list">
+                        ${reversalScore.signals.slice(0, 3).map(signal => `
+                            <span class="signal-item">${signal}</span>
+                        `).join('')}
+                    </div>
+                </div>
+            ` : ''}
+            
+            <div class="trend-conditions">
+                <div class="conditions-title">شروط الترند:</div>
+                <div class="conditions-list">
+                    ${trendAnalysis.conditions.slice(0, 3).map(condition => `
+                        <span class="condition-item">✓ ${condition}</span>
+                    `).join('')}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// إضافة دالة لإعادة تحميل العملات التي بها مشاكل
+async retryFailedCoins() {
+    const failedCoins = this.coins.filter(symbol => {
+        // منطق لتحديد العملات التي فشلت
+        return true; // مؤقت
+    });
+    
+    if (failedCoins.length > 0) {
+        console.log(`إعادة محاولة تحليل ${failedCoins.length} عملة`);
+        // إعادة تحليل العملات الفاشلة
     }
+}
 
     updateStats(results) {
         const downtrendCount = results.length;
