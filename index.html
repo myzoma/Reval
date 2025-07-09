@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مؤشر تحليل الترند الهابط وانعكاسه</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 مؤشر تحليل الترند الهابط وانعكاسه</h1>
+            <div class="controls">
+                <button id="startBtn" class="btn btn-primary">بدء التحليل</button>
+                <button id="stopBtn" class="btn btn-secondary" disabled>إيقاف</button>
+                <select id="intervalSelect" class="select">
+                    <option value="1h">ساعة واحدة</option>
+                    <option value="4h" selected>4 ساعات</option>
+                    <option value="1d">يوم واحد</option>
+                </select>
+            </div>
+        </header>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>العملات المراقبة</h3>
+                <span id="totalCoins" class="stat-value">0</span>
+            </div>
+            <div class="stat-card">
+                <h3>ترند هابط</h3>
+                <span id="downtrendCoins" class="stat-value">0</span>
+            </div>
+            <div class="stat-card">
+                <h3>انعكاس قوي</h3>
+                <span id="strongReversals" class="stat-value">0</span>
+            </div>
+            <div class="stat-card">
+                <h3>انعكاس متوسط</h3>
+                <span id="mediumReversals" class="stat-value">0</span>
+            </div>
+        </div>
+
+        <div class="filters">
+            <div class="filter-group">
+                <label>الحد الأدنى لنقاط الانعكاس:</label>
+                <input type="range" id="reversalThreshold" min="0.1" max="1.0" step="0.1" value="0.7">
+                <span id="thresholdValue">0.7</span>
+            </div>
+            <div class="filter-group">
+                <label>قوة الترند المطلوبة:</label>
+                <input type="range" id="trendStrength" min="3" max="5" step="1" value="3">
+                <span id="strengthValue">3</span>
+            </div>
+        </div>
+
+        <div class="results-container">
+            <div class="section-header">
+                <h2>🔻 العملات في ترند هابط</h2>
+                <div class="status" id="status">جاهز للبدء</div>
+            </div>
+            <div id="resultsGrid" class="results-grid"></div>
+        </div>
+
+        <div class="alerts-container">
+            <div class="section-header">
+                <h2>🚨 التنبيهات الحية</h2>
+                <button id="clearAlerts" class="btn btn-small">مسح الكل</button>
+            </div>
+            <div id="alertsList" class="alerts-list"></div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
