@@ -78,6 +78,42 @@ body {
     overflow: hidden;
     transition: all 0.3s ease;
 }
+/* اسم الموقع بلونين منفصلين */
+.site-name {
+    font-size: 2.2rem;
+    font-weight: 700;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+/* الجزء الأول - أزرق سماوي */
+.site-name .blue-part {
+    color: #00BFFF;
+    text-shadow: 0 2px 4px rgba(0, 191, 255, 0.3);
+    transition: all 0.3s ease;
+}
+
+/* الجزء الثاني - ذهبي */
+.site-name .gold-part {
+    color: #FFD700;
+    text-shadow: 0 2px 4px rgba(255, 215, 0, 0.3);
+    transition: all 0.3s ease;
+}
+
+.site-name:hover .blue-part {
+    color: #87CEEB;
+    text-shadow: 0 0 15px rgba(135, 206, 235, 0.5);
+    transform: scale(1.05);
+}
+
+.site-name:hover .gold-part {
+    color: #FFA500;
+    text-shadow: 0 0 15px rgba(255, 165, 0, 0.5);
+    transform: scale(1.05);
+}
+
 .controls {
     display: flex;
     justify-content: center;
